@@ -1,0 +1,221 @@
+  AWSTemplateFormatVersion: '2010-09-09'
+  Transform: AWS::Serverless-2016-10-31
+  Description: Backend for User Information Web Application
+
+  Globals:
+    Function:
+      Timeout: 10
+      Runtime: nodejs22.x
+      MemorySize: 128
+      Environment:
+        Variables:
+          PROFILE_TABLE: !Ref UserProfileTable
+          BUCKET_NAME: !Ref UserProfileBucket
+
+  Resources:
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: !Sub "${AWS::StackName}-UserPool"
+        AutoVerifiedAttributes:
+          - email
+        Schema:
+          - Name: email
+            Required: true
+            Mutable: true
+        MfaConfiguration: "OFF"
+
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: !Sub "${AWS::StackName}-WebClient"
+        GenerateSecret: false
+        UserPoolId: !Ref UserPool
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_CUSTOM_AUTH
+        SupportedIdentityProviders:
+          - COGNITO
+
+    AdminGroup:
+      Type: AWS::Cognito::UserPoolGroup
+      Properties:
+        GroupName: Admin
+        UserPoolId: !Ref UserPool
+        Description: Admin users can view all user profiles
+
+    IdentityPool:
+      Type: AWS::Cognito::IdentityPool
+      Properties:
+        IdentityPoolName: !Sub "${AWS::StackName}-IdentityPool"
+        AllowUnauthenticatedIdentities: false
+        CognitoIdentityProviders:
+          - ClientId: !Ref UserPoolClient
+            ProviderName: !GetAtt UserPool.ProviderName
+
+    AuthenticatedRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: !Sub "${AWS::StackName}-AuthenticatedRole"
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Federated: cognito-identity.amazonaws.com
+              Action:
+                - sts:AssumeRoleWithWebIdentity
+              Condition:
+                StringEquals:
+                  "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+                "ForAnyValue:StringLike":
+                  "cognito-identity.amazonaws.com:amr": "authenticated"
+        Policies:
+          - PolicyName: S3UserProfileAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:ListBucket
+                  Resource: !GetAtt UserProfileBucket.Arn
+                  Condition:
+                    StringLike:
+                      "s3:prefix": "private/*"
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                    - s3:DeleteObject
+                  Resource: !Sub "${UserProfileBucket.Arn}/private/*"
+    IdentityPoolRoleAttachment:
+      Type: AWS::Cognito::IdentityPoolRoleAttachment
+      Properties:
+        IdentityPoolId: !Ref IdentityPool
+        Roles:
+          authenticated: !GetAtt AuthenticatedRole.Arn
+
+    UserProfileBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: !Sub "${AWS::StackName}-profile-images"
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - "*"
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              AllowedHeaders:
+                - "*"
+              ExposedHeaders:
+                - ETag
+              MaxAge: 3000
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+
+    UserProfileTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: !Sub "${AWS::StackName}-UserProfile"
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    Api:
+      Type: AWS::Serverless::Api
+      Properties:
+        StageName: prod
+        Cors:
+          AllowMethods: "'GET,POST,OPTIONS'"
+          AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+          AllowOrigin: "'*'"
+        Auth:
+          DefaultAuthorizer: CognitoAuthorizer
+          AddDefaultAuthorizerToCorsPreflight: false
+          Authorizers:
+            CognitoAuthorizer:
+              UserPoolArn: !GetAtt UserPool.Arn
+
+    SaveProfileFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        FunctionName: !Sub "${AWS::StackName}-SaveProfile"
+        CodeUri: src/
+        Handler: saveProfile.handler
+        Policies:
+          - DynamoDBCrudPolicy:
+              TableName: !Ref UserProfileTable
+        Events:
+          SaveProfileEvent:
+            Type: Api
+            Properties:
+              RestApiId: !Ref Api
+              Path: /profile
+              Method: post
+
+    GetProfileFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        FunctionName: !Sub "${AWS::StackName}-GetProfile"
+        CodeUri: src/
+        Handler: getProfile.handler
+        Policies:
+          - DynamoDBReadPolicy:
+              TableName: !Ref UserProfileTable
+        Events:
+          GetProfileEvent:
+            Type: Api
+            Properties:
+              RestApiId: !Ref Api
+              Path: /profile
+              Method: get
+
+    GetAllProfilesFunction:
+      Type: AWS::Serverless::Function
+      Properties:
+        FunctionName: !Sub "${AWS::StackName}-GetAllProfiles"
+        CodeUri: src/
+        Handler: getAllProfiles.handler
+        Policies:
+          - DynamoDBReadPolicy:
+              TableName: !Ref UserProfileTable
+        Events:
+          GetAllProfilesEvent:
+            Type: Api
+            Properties:
+              RestApiId: !Ref Api
+              Path: /admin/profiles
+              Method: get
+
+  Outputs:
+    UserPoolId:
+      Description: Cognito User Pool ID
+      Value: !Ref UserPool
+    UserPoolClientId:
+      Description: Cognito User Pool Client ID
+      Value: !Ref UserPoolClient
+    IdentityPoolId:
+      Description: Cognito Identity Pool ID
+      Value: !Ref IdentityPool
+    S3BucketName:
+      Description: S3 bucket for profile images
+      Value: !Ref UserProfileBucket
+    ApiEndpoint:
+      Description: API Gateway endpoint URL
+      Value:
+        !Sub
+          - "https://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/prod"
+          - ApiId: !Ref Api
