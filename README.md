@@ -126,17 +126,23 @@ npm run dev
 
 ### Frontend Configuration
 
-Update `frontend/src/aws-exports.js` with your deployed AWS resource values.
+Create a local env file for the frontend and load your AWS values there.
+
+1. Copy `frontend/.env.example` to `frontend/.env`.
+2. Replace the placeholder values with your deployed AWS resource values.
+
+The frontend reads these values through Vite environment variables, so secrets and environment-specific settings do not need to be committed to source files.
 
 Required values include:
 
-- `aws_project_region`
-- `aws_user_pools_id`
-- `aws_user_pools_web_client_id`
-- `aws_cognito_identity_pool_id`
-- `aws_user_files_s3_bucket`
-- `aws_user_files_s3_bucket_region`
-- `aws_api_gateway_url`
+- `VITE_AWS_PROJECT_REGION`
+- `VITE_AWS_COGNITO_REGION`
+- `VITE_AWS_USER_POOLS_ID`
+- `VITE_AWS_USER_POOLS_WEB_CLIENT_ID`
+- `VITE_AWS_COGNITO_IDENTITY_POOL_ID`
+- `VITE_AWS_USER_FILES_S3_BUCKET`
+- `VITE_AWS_USER_FILES_S3_BUCKET_REGION`
+- `VITE_API_GATEWAY_ENDPOINT`
 
 ## Backend Deployment
 
