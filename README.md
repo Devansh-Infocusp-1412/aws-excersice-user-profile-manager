@@ -52,7 +52,7 @@ Admin users follow the same sign-in flow as normal users. After signing in, they
 
 ## End-User Documentation
 
-For a user-facing guide that can be shared directly with end users, see [USER_GUIDE.md](/home/devansh.nirmal/projects/aws-excersice/USER_GUIDE.md:1).
+For a user-facing guide that can be shared directly with end users, see [USER_GUIDE.md](https://github.com/Devansh-Infocusp-1412/aws-excersice-user-profile-manager/blob/master/USER_GUIDE.md).
 
 ## Project Structure
 
