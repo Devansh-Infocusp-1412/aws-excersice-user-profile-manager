@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchAuthSession, signOut } from "@aws-amplify/auth";
-import Login from './components/Login';
+import Login from "./components/Login";
 import { get, post } from "@aws-amplify/api-rest";
 import { uploadData, getUrl } from "@aws-amplify/storage";
 import "@aws-amplify/ui-react/styles.css";
@@ -28,11 +28,18 @@ function App() {
     setToastMessage(message);
     window.setTimeout(() => setToastMessage(""), 3500);
   };
+  const resetUserState = () => {
+    setProfile(initialProfile);
+    setImageUrl("");
+    setAdminProfiles([]);
+    setStatus({ message: "", type: "info" });
+  };
 
   const logout = async () => {
     await signOut();
     localStorage.clear();
     sessionStorage.clear();
+    resetUserState();
     setUser(null);
     showToast("You have successfully logged out.");
   };
@@ -56,9 +63,12 @@ function App() {
 
   useEffect(() => {
     if (!user) {
+      resetUserState();
       return;
     }
 
+    resetUserState();
+    setLoading(true);
     fetchProfile();
     fetchAdminProfiles();
   }, [user]);
@@ -81,25 +91,28 @@ function App() {
         path: "/profile",
         options: { headers },
       });
-      setLoading(true);
       const response = await result.response;
       const body = await response.body.json();
-      if (body) {
-        setProfile({ ...initialProfile, ...body });
-        if (body.imageKey) {
-          const urlResult = await getUrl({
-            path: body.imageKey,
-            options: {
-              expiresIn: 300,
-            },
-          });
+      setProfile(body ? { ...initialProfile, ...body } : initialProfile);
 
-          setImageUrl(urlResult.url.toString());
-        }
-    }
-    setLoading(false);
+      if (body?.imageKey) {
+        const urlResult = await getUrl({
+          path: body.imageKey,
+          options: {
+            expiresIn: 300,
+          },
+        });
+
+        setImageUrl(urlResult.url.toString());
+      } else {
+        setImageUrl("");
+      }
     } catch (error) {
       console.warn("No profile yet", error);
+      setProfile(initialProfile);
+      setImageUrl("");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -202,7 +215,9 @@ function App() {
               setUser(u);
             }}
           />
-          {toastMessage && <div className="toast toast-success">{toastMessage}</div>}
+          {toastMessage && (
+            <div className="toast toast-success">{toastMessage}</div>
+          )}
         </>
       ) : (
         <AppContent
@@ -258,92 +273,108 @@ function AppContent({
     <main className="page-shell">
       <div className="page-card">
         <div className="header">
-        <h1>User Profile Manager</h1>
-        <div>
-          <span>{authUser?.username || authUser?.attributes?.email}</span>
+          <h1>User Profile Manager</h1>
+          <div>
+            <span>{authUser?.username || authUser?.attributes?.email}</span>
+            <button
+              onClick={async () => {
+                await authSignOut();
+              }}
+              style={{
+                backgroundColor: "#4b6f94",
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+
+        <section className="card">
+          <h2>My Profile</h2>
+          <div className="field-row">
+            <label>Name</label>
+            <input name="name" value={profile.name} onChange={handleChange} />
+          </div>
+          <div className="field-row">
+            <label>Gender</label>
+            <select
+              name="gender"
+              value={profile.gender}
+              onChange={handleChange}
+            >
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div className="field-row">
+            <label>Date of Birth</label>
+            <input
+              name="dob"
+              type="date"
+              value={profile.dob}
+              onChange={handleChange}
+            />
+          </div>
+          <div className="field-row">
+            <label>Height (cm)</label>
+            <input
+              name="height"
+              type="number"
+              value={profile.height}
+              onChange={handleChange}
+            />
+          </div>
+          <div className="field-row">
+            <label>Profile Image</label>
+            <input type="file" accept="image/*" onChange={handleImageUpload} />
+          </div>
+          {imageUrl && (
+            <div className="image-preview">
+              <img src={imageUrl} alt="Profile" />
+            </div>
+          )}
           <button
-            onClick={async () => {
-              await authSignOut();
+            onClick={saveProfile}
+            style={{
+              backgroundColor: "#4b6f94",
             }}
           >
-            Sign Out
+            Save Profile
           </button>
-        </div>
-      </div>
-
-      <section className="card">
-        <h2>My Profile</h2>
-        <div className="field-row">
-          <label>Name</label>
-          <input name="name" value={profile.name} onChange={handleChange} />
-        </div>
-        <div className="field-row">
-          <label>Gender</label>
-          <select name="gender" value={profile.gender} onChange={handleChange}>
-            <option value="">Select</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-        <div className="field-row">
-          <label>Date of Birth</label>
-          <input
-            name="dob"
-            type="date"
-            value={profile.dob}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="field-row">
-          <label>Height (cm)</label>
-          <input
-            name="height"
-            type="number"
-            value={profile.height}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="field-row">
-          <label>Profile Image</label>
-          <input type="file" accept="image/*" onChange={handleImageUpload} />
-        </div>
-        {imageUrl && (
-          <div className="image-preview">
-            <img src={imageUrl} alt="Profile" />
-          </div>
-        )}
-        <button onClick={saveProfile}>Save Profile</button>
-        {status.message && <p className={`status status-${status.type}`}>{status.message}</p>}
-      </section>
-
-      {adminProfiles.length > 0 && (
-        <section className="card">
-          <h2>Admin: All Users</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>User ID</th>
-                <th>Name</th>
-                <th>Gender</th>
-                <th>DOB</th>
-                <th>Height</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adminProfiles.map((item) => (
-                <tr key={item.userId}>
-                  <td>{item.userId}</td>
-                  <td>{item.name}</td>
-                  <td>{item.gender}</td>
-                  <td>{item.dob}</td>
-                  <td>{item.height}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {status.message && (
+            <p className={`status status-${status.type}`}>{status.message}</p>
+          )}
         </section>
-      )}
+
+        {adminProfiles.length > 0 && (
+          <section className="card">
+            <h2>Admin: All Users</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Name</th>
+                  <th>Gender</th>
+                  <th>DOB</th>
+                  <th>Height</th>
+                </tr>
+              </thead>
+              <tbody>
+                {adminProfiles.map((item) => (
+                  <tr key={item.userId}>
+                    <td>{item.userId}</td>
+                    <td>{item.name}</td>
+                    <td>{item.gender}</td>
+                    <td>{item.dob}</td>
+                    <td>{item.height}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
       </div>
     </main>
   );
