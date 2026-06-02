@@ -172,7 +172,12 @@ function App() {
     if (!file) return;
 
     try {
-      const userId = user?.userId || user?.username;
+      const session = await fetchAuthSession();
+      const userId = session.userSub;
+
+      if (!userId) {
+        throw new Error("Unable to resolve signed-in user ID.");
+      }
 
       const imagePath = `private/${userId}/profile.jpg`;
 
@@ -211,8 +216,9 @@ function App() {
       ) : !user ? (
         <>
           <Login
-            onSignIn={(u) => {
-              setUser(u);
+            onSignIn={async () => {
+              const session = await fetchAuthSession();
+              setUser({ userId: session.userSub });
             }}
           />
           {toastMessage && (
